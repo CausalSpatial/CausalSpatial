@@ -44,11 +44,13 @@ We introduce ***CausalSpatial***, the first-of-this-kind diagnostic benchmark de
 
 ## :memo: Contents
 
+- [:memo: Contents](#memo-contents)
 - [💡 Updates \& News](#-updates--news)
 - [💾 Environment](#-environment)
 - [🚀 Evaluation](#-evaluation)
-- [⚠️ TODO List](#-todo-list)
-- [🤗 Acknowledgement](#-acknowledgement)
+- [VLMEvalKit](#vlmevalkit)
+- [⚠️ TODO List](#️-todo-list)
+- [👍 Acknowledgement](#-acknowledgement)
 <!-- - [⭐ Citation](#⭐-citation) -->
 
 ## 💡 Updates & News
@@ -147,6 +149,23 @@ cp -r ./Wan2.1-I2V-14B-480P/google ./Wan2.1-ATI-14B-480P/
     --ObjWM                             # Set for evaluation with ObjWM
     --ObjWM_output ./output             # Directory where the ObjWM outputs are saved
     --video_frame 1+3+5                 # Select target frames of generated video
+  ```
+
+## VLMEvalKit
+
+1. Download TSV file
+  ```python
+  import pandas as pd
+  from huggingface_hub import hf_hub_download
+
+  file_path = hf_hub_download(
+      repo_id="Mwxinnn/CausalSpatial",
+      filename="VLMEvalKit/CausalSpatial.tsv",
+      repo_type="dataset"
+  )
+
+  df = pd.read_csv(file_path, sep='\t')
+  print(df.head())
   ```
 
 ## ⚠️ TODO List
