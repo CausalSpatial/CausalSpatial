@@ -25,7 +25,7 @@
 
 ---
 
-<img src="figures/intro.png">
+<!-- <img src="figures/intro.png"> -->
 
 We introduce ***CausalSpatial***, the first-of-this-kind diagnostic benchmark designed to evaluate the capability of **Causal Spatial Reasoning**.
 
