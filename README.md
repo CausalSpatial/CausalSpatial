@@ -48,7 +48,7 @@ We introduce ***CausalSpatial***, the first-of-this-kind diagnostic benchmark de
 - [💡 Updates \& News](#-updates--news)
 - [💾 Environment](#-environment)
 - [🚀 Evaluation](#-evaluation)
-- [VLMEvalKit](#vlmevalkit)
+- [📂 VLMEvalKit](#-vlmevalkit)
 - [⚠️ TODO List](#️-todo-list)
 - [👍 Acknowledgement](#-acknowledgement)
 <!-- - [⭐ Citation](#⭐-citation) -->
@@ -151,7 +151,7 @@ cp -r ./Wan2.1-I2V-14B-480P/google ./Wan2.1-ATI-14B-480P/
     --video_frame 1+3+5                 # Select target frames of generated video
   ```
 
-## VLMEvalKit
+## 📂 VLMEvalKit
 
 1. Download TSV file
   ```python
