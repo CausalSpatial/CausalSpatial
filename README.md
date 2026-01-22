@@ -1,6 +1,6 @@
 <div align="center">
 <h1>CausalSpatial: A Comprehensive Benchmark for Object-Centric Causal Spatial Reasoning</h1>
-<a href="arxiv link"><img src="https://img.shields.io/badge/arXiv-2509.13414-b31b1b" alt="arXiv"></a>
+<a href="https://arxiv.org/abs/2601.13304"><img src="https://img.shields.io/badge/arXiv-2509.13414-b31b1b" alt="arXiv"></a>
 <a href="huggingface link"><img src='https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Dataset-blue'></a>
 <br>
 <br>
@@ -51,7 +51,7 @@ We introduce ***CausalSpatial***, the first-of-this-kind diagnostic benchmark de
 - [📂 VLMEvalKit](#-vlmevalkit)
 - [⚠️ TODO List](#️-todo-list)
 - [👍 Acknowledgement](#-acknowledgement)
-<!-- - [⭐ Citation](#⭐-citation) -->
+- [⭐ Citation](#⭐-citation)
 
 ## 💡 Updates & News
 - [2026/1] Our paper has been released on Arxiv.
@@ -100,9 +100,9 @@ cp -r ./Wan2.1-I2V-14B-480P/google ./Wan2.1-ATI-14B-480P/
   python eval.py --model_path GPT5 --output_file ./output-gpt5 --subset collision+physics
   ```
 
-3. **Inference ObjWM**
+3. **Inference COW**
 
-  Note that, ObjWM requires two gpus (80G) for generation. One is for trajectory prediction, the other is for video generation.
+  Note that, COW requires two gpus (80G) for generation. One is for trajectory prediction, the other is for video generation.
   ```python
   from pipeline import IWM
 
@@ -127,11 +127,11 @@ cp -r ./Wan2.1-I2V-14B-480P/google ./Wan2.1-ATI-14B-480P/
   print(output["rewrite_prompt"])     # rewrite prompt
   ```
 
-4. **Evaluate MLLMs with ObjWM on CausalSpatial**
+4. **Evaluate MLLMs with COW on CausalSpatial**
 
-  We highly recommend to first inference ObjWM to generate videos and then evaluate MLLMs on the generated videos.
+  We highly recommend to first inference COW to generate videos and then evaluate MLLMs on the generated videos.
 
-  - Inference ObjWM on CausalSpatial
+  - Inference COW on CausalSpatial
   ```cli
   # Prepare 2 gpus for generation
   python pipeline.py --output_dir ./output --subset collision+physics
@@ -140,14 +140,14 @@ cp -r ./Wan2.1-I2V-14B-480P/google ./Wan2.1-ATI-14B-480P/
   torchrun --nproc_per_node=4 pipeline.py --output_dir ./output --subset collision
   ```
 
-  - Evaluate MLLMs with ObjWM Outputs
+  - Evaluate MLLMs with COW Outputs
   ```cli
   python eval.py \
     --model_path GPT5 \
     --output_file ./output-gpt5 \
     --subset collision+physics \
-    --ObjWM                             # Set for evaluation with ObjWM
-    --ObjWM_output ./output             # Directory where the ObjWM outputs are saved
+    --ObjWM                             # Set for evaluation with COW
+    --ObjWM_output ./output             # Directory where the COW outputs are saved
     --video_frame 1+3+5                 # Select target frames of generated video
   ```
 
@@ -170,7 +170,7 @@ cp -r ./Wan2.1-I2V-14B-480P/google ./Wan2.1-ATI-14B-480P/
 
 ## ⚠️ TODO List
 - [ ] Adaptation to VLMEvalKit
-- [ ] ObjWM inference for parabolic motion
+- [ ] COW inference for parabolic motion
 - [x] Dataset Release
 - [x] Paper Release
 
@@ -182,8 +182,13 @@ We also thank these great projects:
 - [ATI](https://github.com/bytedance/ATI) a trajectory-based motion control framework that unifies object, local and camera movements in video generation. 
 
 
-<!-- ## ⭐ Citation
+## ⭐ Citation
 
 ```
-
-``` -->
+@article{ma2025causalspatial,
+  title={CausalSpatial: A Comprehensive Benchmark for Object-Centric Causal Spatial Reasoning},
+  author={Ma, Wenxin and Wang, Chenlong and Yuan, Ruisheng and Chen, Hao and Dai, Nanru and Zhou, S. Kevin and Yang, Yijun and Yuille, Alan and Chen, Jieneng},
+  journal={arXiv preprint arXiv:2601.13304},
+  year={2026}
+}
+```
