@@ -14,7 +14,7 @@ from asset.ati_pipeline import ATI
 
 
 
-class ObjWM:
+class COW:
     def __init__(
         self,
         frame_num: int = 60,
@@ -144,7 +144,7 @@ def main():
         print("Output directory already exists. Exiting...")
         exit(0)
     
-    iwm = ObjWM(
+    cow = COW(
         mllm_device=mllm_device,
         video_device=video_device
     )
@@ -154,7 +154,7 @@ def main():
         if not os.path.exists(sample_save_dir):
              os.makedirs(sample_save_dir, exist_ok=True)
 
-        res = iwm(
+        res = cow(
             prompt=item["question"],
             image_a_path=item["image"],
             save_dir=sample_save_dir,
@@ -170,29 +170,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-# if __name__ == "__main__":
-#     import json
-#     import os
-
-#     data_idx = 0
-#     # data_idx = 7
-
-#     data_path = "/scratch/dwirtz1/wcloong-iwm/Benchmark_inference/collision"
-#     with open(os.path.join(data_path, "level_1.jsonl"), "r") as f:
-#         data = [json.loads(l) for l in f]
-    
-#     data = data[data_idx]
-#     question = data["question"]
-#     image_path = os.path.join(data_path, data["image"])
-
-
-#     iwm = ObjWM()
-
-#     res = iwm(
-#         prompt=question,
-#         image_a_path=image_path,
-#         save_dir="/scratch/dwirtz1/wcloong-iwm/test-result",
-#         # motion_type="parabolic"
-#     )
