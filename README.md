@@ -169,7 +169,6 @@ cp -r ./Wan2.1-I2V-14B-480P/google ./Wan2.1-ATI-14B-480P/
 
 ## ⚠️ TODO List
 - [ ] Adaptation to VLMEvalKit
-- [ ] COW inference for parabolic motion
 - [x] Dataset Release
 - [x] Paper Release
 
