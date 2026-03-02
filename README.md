@@ -1,7 +1,7 @@
 <div align="center">
 <h1>CausalSpatial: A Comprehensive Benchmark for Object-Centric Causal Spatial Reasoning</h1>
 <a href="https://arxiv.org/abs/2601.13304"><img src="https://img.shields.io/badge/arXiv-2601.13414-b31b1b" alt="arXiv"></a>
-<a href="huggingface link"><img src='https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Dataset-blue'></a>
+<a href="https://huggingface.co/datasets/Mwxinnn/CausalSpatial"><img src='https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Dataset-blue'></a>
 <br>
 <br>
 <strong>
