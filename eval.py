@@ -7,6 +7,7 @@ import warnings
 import anthropic
 import ast
 import cv2
+import copy
 
 from tqdm import tqdm
 from transformers import (
@@ -17,8 +18,9 @@ from transformers import (
 )
 from PIL import Image
 from qwen_vl_utils import process_vision_info
-from openai import OpenAI
-from datasets import load_dataset, concatenate_datasets
+import asyncio
+from openai import OpenAI, AsyncOpenAI
+from datasets import load_dataset, concatenate_datasets, Image as HFImage
 from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor
 
@@ -68,17 +70,42 @@ def get_frames_from_video(video_path, target_frame=[2, 4]):
     return images
 
 
-def load_pretrained(path):
+def load_pretrained(path, node=None, port=None):
     path_lower = path.lower()
     if "claude" in path_lower:
         return anthropic.Anthropic(), None
     elif "gpt-5" in path_lower or "gpt-4" in path_lower:
-        from openai import OpenAI
-        return OpenAI(), None
+        return [AsyncOpenAI()], None
     elif "gemini" in path_lower:
         from google import genai
+        creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+        if creds_path:
+            with open(creds_path, 'r') as f:
+                project_id = json.load(f)["project_id"]
+            location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+            return genai.Client(vertexai=True, project=project_id, location=location), None
+        api_key = os.environ.get("GOOGLE_API_KEY")
+        if api_key:
+            return genai.Client(api_key=api_key), None
         return genai.Client(vertexai=True, location='us-central1'), None
-    
+    elif node is not None:
+        # Support comma-separated endpoints: --node h11,h11,h11 --port 23000,23001,23002
+        nodes = [n.strip() for n in node.split(",")]
+        ports = [p.strip() for p in port.split(",")] if port else [None] * len(nodes)
+        if len(ports) == 1 and len(nodes) > 1:
+            ports = ports * len(nodes)
+        assert len(nodes) == len(ports), "Number of nodes and ports must match"
+
+        clients = []
+        model_id = None
+        for n, p in zip(nodes, ports):
+            base_url = f"http://{n}:{p}/v1" if p else f"http://{n}/v1"
+            if model_id is None:  # query model name once from first endpoint
+                model_id = OpenAI(api_key="EMPTY", base_url=base_url).models.list().data[0].id
+            clients.append(AsyncOpenAI(api_key="EMPTY", base_url=base_url, timeout=3600))
+        print(f"Using {len(clients)} endpoint(s), model_id: {model_id}")
+        return clients, model_id
+
     print(f"Loading local model: {path}")
     if "llava" in path_lower:
         model_cls = AutoModelForCausalLM
@@ -114,65 +141,66 @@ def load_pretrained(path):
     return model, processor
 
 
+async def _async_openai_batch(clients, model_name, messages_list, tokens, extra_body=None):
+    """Async concurrent API calls with round-robin across multiple endpoints."""
+    async def _single(idx, msg):
+        client = clients[idx % len(clients)]
+        try:
+            kwargs = dict(model=model_name, messages=msg, max_tokens=tokens)
+            if extra_body:
+                kwargs["extra_body"] = extra_body
+            resp = await client.chat.completions.create(**kwargs)
+            return resp.choices[0].message.content
+        except Exception as e:
+            return f"Error: {str(e)}"
+    return list(await asyncio.gather(*[_single(i, msg) for i, msg in enumerate(messages_list)]))
+
+
 def batch_inference(batch_messages, batch_images, path, model, processor, tokens=8192):
     path_lower = path.lower()
-    
-    # API call models
-    is_api = any(x in path_lower for x in ["gpt", "claude", "gemini"])
-    
-    if is_api:
+
+    # list of AsyncOpenAI clients covers: GPT and any vLLM-deployed model (any size/count)
+    if isinstance(model, list):
+        model_name = processor if isinstance(processor, str) else path
+        # vLLM-served models (processor is model_id string): disable Qwen3 thinking mode
+        extra_body = {"enable_thinking": False} if isinstance(processor, str) else None
+        return asyncio.run(_async_openai_batch(model, model_name, batch_messages, tokens, extra_body=extra_body))
+
+    if isinstance(model, anthropic.Anthropic) or (genai and isinstance(model, genai.Client)):
+        # Claude / Gemini: synchronous ThreadPoolExecutor path
         def _single_api_call(args):
             index, msg = args
             try:
-                if "claude" in path_lower:
+                if isinstance(model, anthropic.Anthropic):
                     response = model.messages.create(model=path, max_tokens=tokens, messages=msg)
                     return (index, response.content[0].text)
-                
-                elif "gpt" in path_lower or "235b" in path_lower:
-                    client = model if "235b" not in path_lower else OpenAI(api_key="EMPTY", base_url="http://c008:22002/v1")
-                    model_name = path if "235b" not in path_lower else client.models.list().data[0].id
-                    response = client.chat.completions.create(model=model_name, messages=msg)
-                    return (index, response.choices[0].message.content)
-                
-                elif "gemini" in path_lower:
-                    if isinstance(msg, list) and "content" in msg[0]:
-                        for item in msg[0]["content"]:
-                            if item.get("type") == "text":
-                                prompt_text = item["text"]
-                    
-                    img = None
+
+                elif genai and isinstance(model, genai.Client):
+                    prompt_text = ""
+                    imgs = []
                     for item in msg[0]["content"]:
-                        if item.get("type") == "image":
-                            img = item["image"]
-                    image_bytes = pil_to_bytes(img, format="PNG") 
-                    contents = [
-                        types.Part.from_text(text=prompt_text),
-                        types.Part.from_bytes(data=image_bytes, mime_type="image/png")
+                        if item.get("type") == "text":
+                            prompt_text = item["text"]
+                        elif item.get("type") == "image":
+                            imgs.append(item["image"])
+                    contents = [types.Part.from_text(text=prompt_text)] + [
+                        types.Part.from_bytes(data=pil_to_bytes(img, format="PNG"), mime_type="image/png")
+                        for img in imgs
                     ]
                     config = types.GenerateContentConfig(max_output_tokens=tokens)
-                    
-                    response = model.models.generate_content(
-                        model=path,
-                        contents=contents,
-                        config=config
-                    )
+                    response = model.models.generate_content(model=path, contents=contents, config=config)
                     return (index, response.text)
-                    
+
+
             except Exception as e:
                 return (index, f"Error: {str(e)}")
 
-
         indexed_messages = [(i, msg) for i, msg in enumerate(batch_messages)]
-        
         results_map = {}
         with ThreadPoolExecutor(max_workers=len(batch_messages)) as executor:
-            futures = executor.map(_single_api_call, indexed_messages)
-            
-            for idx, result_text in futures:
+            for idx, result_text in executor.map(_single_api_call, indexed_messages):
                 results_map[idx] = result_text
-        
-        sorted_results = [results_map[i] for i in range(len(batch_messages))]
-        return sorted_results
+        return [results_map[i] for i in range(len(batch_messages))]
 
     else:
         texts = [
@@ -206,6 +234,20 @@ def batch_inference(batch_messages, batch_images, path, model, processor, tokens
             return output_texts
         
 
+def load_answered_ids(output_file):
+    answered_ids = set()
+    if os.path.exists(output_file):
+        with open(output_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        answered_ids.add(json.loads(line)["question_id"])
+                    except (json.JSONDecodeError, KeyError):
+                        pass
+    return answered_ids
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", type=str, required=True)
@@ -215,22 +257,28 @@ def main():
     parser.add_argument("--ObjWM", action='store_true')
     parser.add_argument("--ObjWM_output", type=str, default=None)
     parser.add_argument("--video_frame", nargs="+", type=str, default=[1,3,5])
-    
+    parser.add_argument("--node", type=str, default=None, help="vLLM server node address")
+    parser.add_argument("--port", type=str, default=None, help="vLLM server port")
+
     repo_id = "Mwxinnn/CausalSpatial"
     args = parser.parse_args()
-    
-    model, processor = load_pretrained(args.model_path)
+
+    model, processor = load_pretrained(args.model_path, node=args.node, port=args.port)
     
     if len(args.subset) == 1:
         dataset = load_dataset(repo_id, args.subset[0], split="train")
     else:
         dataset_list = [
-            load_dataset(repo_id, subset, split="train") 
+            load_dataset(repo_id, subset, split="train").cast_column("image", HFImage())
             for subset in args.subset
         ]
         dataset = concatenate_datasets(dataset_list)
     
     os.makedirs(os.path.dirname(os.path.abspath(args.output_file)), exist_ok=True)
+
+    answered_ids = load_answered_ids(args.output_file)
+    if answered_ids:
+        print(f"Resuming: skipping {len(answered_ids)} already answered questions")
     print(f"Starting inference: {len(dataset)} samples, Batch Size: {args.batch_size}")
 
     # Record extra video frames for inference
@@ -249,22 +297,37 @@ def main():
     for i in tqdm(range(0, len(dataset), args.batch_size)):
         batch_data = dataset[i : i + args.batch_size] 
         
-        batch_questions = batch_data["question"]
-        batch_images = batch_data["image"]
-        batch_ids = batch_data["id"]
-        batch_answers = batch_data["answer"]
-        batch_not_sure = batch_data["not_sure"]
-        
+        batch_questions    = batch_data["question"]
+        batch_images       = batch_data["image"]
+        batch_ids          = batch_data["id"]
+        batch_answers      = batch_data["answer"]
+        batch_not_sure     = batch_data["not_sure"]
+        # id format: "Collision_Level_1_0" → type="collision", difficulty="L1"
+        batch_types        = [qid.split("_")[0].lower() for qid in batch_ids]
+        batch_difficulties = ["L" + qid.split("_Level_")[1].split("_")[0] for qid in batch_ids]
+
+        # Skip already answered questions
+        unanswered_mask = [qid not in answered_ids for qid in batch_ids]
+        if not any(unanswered_mask):
+            continue
+        batch_questions    = [q  for q,  m in zip(batch_questions,    unanswered_mask) if m]
+        batch_images       = [img for img, m in zip(batch_images,      unanswered_mask) if m]
+        batch_ids          = [qid for qid, m in zip(batch_ids,         unanswered_mask) if m]
+        batch_answers      = [a  for a,  m in zip(batch_answers,       unanswered_mask) if m]
+        batch_not_sure     = [ns for ns, m in zip(batch_not_sure,      unanswered_mask) if m]
+        batch_types        = [t  for t,  m in zip(batch_types,         unanswered_mask) if m]
+        batch_difficulties = [d  for d,  m in zip(batch_difficulties,  unanswered_mask) if m]
+
         batch_messages = []
         current_batch_imgs = []
-        
+
         for qid, q, img in zip(batch_ids, batch_questions, batch_images):
             if not args.ObjWM:
                 prompt = q + "\n\nWrite your response into this json template: {'Reasoning': '<your reasons>', 'Answer': '<Your answer>'}"
             else:
                 prompt = q + "Note that, the first image is the initial state. The subsequent images are simulated scenarios according to the first image and motion context provided in the question. These two images might help you to analyze and reason the question." + "\n\nWrite your response into this json template: {'Reasoning': '<your reasons>', 'Answer': '<Your answer>'}"
             
-            use_base64 = any(x in args.model_path.lower() for x in ["gpt", "claude", "qwen3-vl-235b"])
+            use_base64 = isinstance(model, (list, anthropic.Anthropic))
             content = [
                 {"type": "image", "image": img}
             ] + [
@@ -273,22 +336,20 @@ def main():
             
             if use_base64:
                 imgs_b64 = [pil_to_base64(img_) for img_ in [img] + [frame for frame in video_frame_dict[qid]]]
-                if "claude" in args.model_path.lower():
+                if isinstance(model, anthropic.Anthropic):
                     msg = [{"role": "user", "content": [
                         {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": img_b64}}
                         for img_b64 in imgs_b64
                     ] + [
                         {"type": "text", "text": prompt}
                     ]}]
-                elif "gpt" in args.model_path.lower() or "235b" in args.model_path.lower():
+                else:  # list of AsyncOpenAI clients (GPT / vLLM)
                     msg = [{"role": "user", "content": [
                         {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
                         for img_b64 in imgs_b64
                     ] + [
                         {"type": "text", "text": prompt}
                     ]}]
-                else:
-                    msg = [{"role": "user", "content": content}]
                 batch_messages.append(msg)
                 current_batch_imgs.append(img) 
             else:
@@ -304,11 +365,13 @@ def main():
                 for j, pred in enumerate(predictions):
                     result = {
                         "question_id": batch_ids[j],
-                        "question": batch_questions[j], 
+                        "question": batch_questions[j],
                         "gt_answer": batch_answers[j],
                         "model_answer": pred,
                         "model": args.model_path,
-                        "not_sure": batch_not_sure[j]
+                        "not_sure": batch_not_sure[j],
+                        "type": batch_types[j],
+                        "difficulty": batch_difficulties[j],
                     }
                     f.write(json.dumps(result, ensure_ascii=False) + "\n")
                     collect_results.append(result)
@@ -325,9 +388,9 @@ def main():
     "L1": {"collision": 0, "physics": 0, "occlusion": 0, "compatibility": 0},
     "L2": {"collision": 0, "physics": 0, "occlusion": 0, "compatibility": 0}
     }
-    res = tmp.copy()
-    num = tmp.copy()
-    error = tmp.copy()
+    res = copy.deepcopy(tmp)
+    num = copy.deepcopy(tmp)
+    error = copy.deepcopy(tmp)
 
     for item in collect_results:
         subset = item["type"]
@@ -336,6 +399,7 @@ def main():
         num[level][subset] += 1
         ans = item["gt_answer"][1] if item["gt_answer"][0] == "(" else item["gt_answer"][0]
 
+        answer = None
         try:
             start_idx = item["model_answer"].find('{')
             end_idx = item["model_answer"].rfind('}')
@@ -344,13 +408,15 @@ def main():
         except:
             error[level][subset] += 1
 
-        if ans == answer:
+        if answer is not None and ans == answer:
             res[level][subset] += 1
 
     for level, level_res in res.items():
         for subset, score in level_res.items():
-            s = score/num[level][subset] if num[level][subset] != 0 else "NaN"
-            print(f"{level} {subset}:\t{s:.2%} ({score} / {num[level][subset]})")
+            if num[level][subset] != 0:
+                print(f"{level} {subset}:\t{score/num[level][subset]:.2%} ({score} / {num[level][subset]})")
+            else:
+                print(f"{level} {subset}:\tNaN (0 / 0)")
     
     print("=" * 50)
 

@@ -93,10 +93,44 @@ cp -r ./Wan2.1-I2V-14B-480P/google ./Wan2.1-ATI-14B-480P/
 
 2. **Evaluate MLLMs on CausalSpatial**
 
-  Optional models: 
-  - GPT5 / GPT-5 mini / Claude / Gemini / Qwen2.5 VL / Qwem3-VL
+  Optional models:
+  - GPT-4o / GPT-5 / Claude / Gemini / Qwen2.5-VL / Qwen3-VL
+
+  **Cloud API models** (GPT, Claude):
   ```cli
-  python eval.py --model_path GPT5 --output_file ./output-gpt5 --subset collision+physics
+  python eval.py \
+    --model_path gpt-4o \
+    --output_file ./output/gpt4o.jsonl \
+    --subset collision physics
+  ```
+
+  **Gemini** (via Vertex AI credentials):
+  ```cli
+  export GOOGLE_APPLICATION_CREDENTIALS="/path/to/your-credentials.json"
+  export GOOGLE_CLOUD_LOCATION="us-central1"  # optional, default: us-central1
+  python eval.py \
+    --model_path gemini-2.5-flash \
+    --output_file ./output/gemini.jsonl \
+    --subset collision physics
+  ```
+  > Alternatively, use [Google AI Studio](https://aistudio.google.com) API key: `export GOOGLE_API_KEY="your-api-key"` (no credentials file needed).
+
+  **vLLM-served models** (any Qwen3-VL size: 4B, 7B, 72B, 235B, ...):
+  ```cli
+  python eval.py \
+    --model_path Qwen3-VL-7B \
+    --node <server_node> \
+    --port <server_port> \
+    --output_file ./output/qwen3vl.jsonl \
+    --subset collision physics
+  ```
+
+  **Local models** (loaded directly):
+  ```cli
+  python eval.py \
+    --model_path /path/to/Qwen2.5-VL-7B-Instruct \
+    --output_file ./output/qwen25vl.jsonl \
+    --subset collision physics
   ```
 
 3. **Inference COW**
@@ -142,12 +176,12 @@ cp -r ./Wan2.1-I2V-14B-480P/google ./Wan2.1-ATI-14B-480P/
   - Evaluate MLLMs with COW Outputs
   ```cli
   python eval.py \
-    --model_path GPT5 \
-    --output_file ./output-gpt5 \
-    --subset collision+physics \
-    --ObjWM                             # Set for evaluation with COW
-    --ObjWM_output ./output             # Directory where the COW outputs are saved
-    --video_frame 1+3+5                 # Select target frames of generated video
+    --model_path gpt-4o \
+    --output_file ./output/gpt4o_cow.jsonl \
+    --subset collision physics \
+    --ObjWM \
+    --ObjWM_output ./output \
+    --video_frame 1 3 5
   ```
 
 ## 📂 VLMEvalKit
