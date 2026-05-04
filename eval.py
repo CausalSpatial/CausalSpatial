@@ -251,15 +251,15 @@ def load_answered_ids(output_file):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", type=str, required=True)
+    parser.add_argument("--node", type=str, default=None, help="vLLM server host(s), comma-separated for multiple endpoints")
+    parser.add_argument("--port", type=str, default=None, help="vLLM server port(s), comma-separated (must match --node)")
     parser.add_argument("--output_file", type=str, required=True)
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--subset", nargs="+", type=str, default=["collision"])
-    parser.add_argument("--ObjWM", action='store_true')
-    parser.add_argument("--ObjWM_output", type=str, default=None)
-    parser.add_argument("--video_frame", nargs="+", type=int, default=[1,3,5])
-    parser.add_argument("--node", type=str, default=None, help="vLLM server node address")
-    parser.add_argument("--port", type=str, default=None, help="vLLM server port")
-
+    parser.add_argument("--COW", action='store_true')
+    parser.add_argument("--COW_output", type=str, default=None)
+    parser.add_argument("--video_frame", nargs="+", type=str, default=[1,3,5])
+    
     repo_id = "Mwxinnn/CausalSpatial"
     args = parser.parse_args()
 
@@ -297,10 +297,10 @@ def main():
     video_frame_dict = {}
     for item in dataset:
         video_frame_dict[item["id"]] = []
-    if args.ObjWM:
-        video_list = os.listdir(args.ObjWM_output)
+    if args.COW:
+        video_list = os.listdir(args.COW_output)
         for video_dir in video_list:
-            video_path = os.path.join(args.ObjWM_output, video_dir, "gen_video.mp4")
+            video_path = os.path.join(args.COW_output, video_dir, "gen_video.mp4")
             video_frames = get_frames_from_video(video_path, args.video_frame)
             video_frame_dict[video_dir] = video_frames
 
@@ -354,7 +354,7 @@ def main():
         current_batch_imgs = []
 
         for qid, q, img in zip(batch_ids, batch_questions, batch_images):
-            if not args.ObjWM:
+            if not args.COW:
                 prompt = q + "\n\nWrite your response into this json template: {'Reasoning': '<your reasons>', 'Answer': '<Your answer>'}"
             else:
                 prompt = q + "Note that, the first image is the initial state. The subsequent images are simulated scenarios according to the first image and motion context provided in the question. These two images might help you to analyze and reason the question." + "\n\nWrite your response into this json template: {'Reasoning': '<your reasons>', 'Answer': '<Your answer>'}"

@@ -1,7 +1,7 @@
 <div align="center">
 <h1>CausalSpatial: A Comprehensive Benchmark for Object-Centric Causal Spatial Reasoning</h1>
-<a href="https://arxiv.org/abs/2601.13304"><img src="https://img.shields.io/badge/arXiv-2509.13414-b31b1b" alt="arXiv"></a>
-<a href="huggingface link"><img src='https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Dataset-blue'></a>
+<a href="https://arxiv.org/abs/2601.13304"><img src="https://img.shields.io/badge/arXiv-2601.13304-b31b1b" alt="arXiv"></a>
+<a href="https://huggingface.co/datasets/Mwxinnn/CausalSpatial"><img src='https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Dataset-blue'></a>
 <br>
 <br>
 <strong>
@@ -21,7 +21,7 @@
 <sup>2</sup> USTC &nbsp;&nbsp;
 <sup>3</sup> HKUST
 </strong>
-</div>
+</div> 
 
 ---
 
@@ -155,9 +155,9 @@ cp -r ./Wan2.1-I2V-14B-480P/google ./Wan2.1-ATI-14B-480P/
       generate=True,
   )
 
-  print(output["save"])               # output directory
-  print(output["object"])             # target object description
-  print(output["rewrite_prompt"])     # rewrite prompt
+  print(output_dict["save"])               # output directory
+  print(output_dict["object"])             # target object description
+  print(output_dict["rewrite_prompt"])     # rewrite prompt
   ```
 
 4. **Evaluate MLLMs with COW on CausalSpatial**
@@ -167,7 +167,7 @@ cp -r ./Wan2.1-I2V-14B-480P/google ./Wan2.1-ATI-14B-480P/
   - Inference COW on CausalSpatial
   ```cli
   # Prepare 2 gpus for generation
-  python pipeline.py --output_dir ./output --subset collision+physics
+  python pipeline.py --output_dir ./output --subset collision physics
 
   # If 8 gpus for inference
   torchrun --nproc_per_node=4 pipeline.py --output_dir ./output --subset collision
@@ -179,8 +179,8 @@ cp -r ./Wan2.1-I2V-14B-480P/google ./Wan2.1-ATI-14B-480P/
     --model_path gpt-4o \
     --output_file ./output/gpt4o_cow.jsonl \
     --subset collision physics \
-    --ObjWM \
-    --ObjWM_output ./output \
+    --COW \
+    --COW_output ./output \
     --video_frame 1 3 5
   ```
 
@@ -203,7 +203,6 @@ cp -r ./Wan2.1-I2V-14B-480P/google ./Wan2.1-ATI-14B-480P/
 
 ## ⚠️ TODO List
 - [ ] Adaptation to VLMEvalKit
-- [ ] COW inference for parabolic motion
 - [x] Dataset Release
 - [x] Paper Release
 
