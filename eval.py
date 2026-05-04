@@ -53,7 +53,7 @@ def get_frames_from_video(video_path, target_frame=[2, 4]):
     
     if not cap.isOpened():
         print("Cannot open video file!")
-        return None, None
+        return []
     images = []
 
     for idx in target_frame:
@@ -256,7 +256,7 @@ def main():
     parser.add_argument("--subset", nargs="+", type=str, default=["collision"])
     parser.add_argument("--ObjWM", action='store_true')
     parser.add_argument("--ObjWM_output", type=str, default=None)
-    parser.add_argument("--video_frame", nargs="+", type=str, default=[1,3,5])
+    parser.add_argument("--video_frame", nargs="+", type=int, default=[1,3,5])
     parser.add_argument("--node", type=str, default=None, help="vLLM server node address")
     parser.add_argument("--port", type=str, default=None, help="vLLM server port")
 
@@ -266,7 +266,7 @@ def main():
     model, processor = load_pretrained(args.model_path, node=args.node, port=args.port)
     
     if len(args.subset) == 1:
-        dataset = load_dataset(repo_id, args.subset[0], split="train")
+        dataset = load_dataset(repo_id, args.subset[0], split="train").cast_column("image", HFImage())
     else:
         dataset_list = [
             load_dataset(repo_id, subset, split="train").cast_column("image", HFImage())
@@ -276,7 +276,19 @@ def main():
     
     os.makedirs(os.path.dirname(os.path.abspath(args.output_file)), exist_ok=True)
 
-    answered_ids = load_answered_ids(args.output_file)
+    collect_results = []
+    answered_ids = set()
+    if os.path.exists(args.output_file):
+        with open(args.output_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        item = json.loads(line)
+                        answered_ids.add(item["question_id"])
+                        collect_results.append(item)
+                    except (json.JSONDecodeError, KeyError):
+                        pass
     if answered_ids:
         print(f"Resuming: skipping {len(answered_ids)} already answered questions")
     print(f"Starting inference: {len(dataset)} samples, Batch Size: {args.batch_size}")
@@ -292,19 +304,39 @@ def main():
             video_frames = get_frames_from_video(video_path, args.video_frame)
             video_frame_dict[video_dir] = video_frames
 
+    is_realworld = len(args.subset) == 1 and args.subset[0] == "realworld"
+    LETTERS = "ABCDEFGHIJ"
+
     # Evaluate
-    collect_results = []
     for i in tqdm(range(0, len(dataset), args.batch_size)):
-        batch_data = dataset[i : i + args.batch_size] 
-        
-        batch_questions    = batch_data["question"]
+        batch_data = dataset[i : i + args.batch_size]
+
         batch_images       = batch_data["image"]
         batch_ids          = batch_data["id"]
-        batch_answers      = batch_data["answer"]
-        batch_not_sure     = batch_data["not_sure"]
-        # id format: "Collision_Level_1_0" → type="collision", difficulty="L1"
-        batch_types        = [qid.split("_")[0].lower() for qid in batch_ids]
-        batch_difficulties = ["L" + qid.split("_Level_")[1].split("_")[0] for qid in batch_ids]
+
+        if is_realworld:
+            # realworld schema: separate options list, answer is full text → resolve to letter
+            batch_options  = batch_data["options"]
+            batch_types    = batch_data["type"]
+            batch_difficulties = ["realworld"] * len(batch_ids)
+            batch_not_sure     = [""] * len(batch_ids)
+            batch_questions = []
+            batch_answers   = []
+            for q, opts, ans in zip(batch_data["question"], batch_options, batch_data["answer"]):
+                opts_str = "\n".join(f"({LETTERS[k]}) {opt}" for k, opt in enumerate(opts))
+                batch_questions.append(f"{q}\n\n{opts_str}")
+                try:
+                    idx = [o.strip() for o in opts].index(ans.strip())
+                    batch_answers.append(f"({LETTERS[idx]})")
+                except ValueError:
+                    batch_answers.append(ans)
+        else:
+            batch_questions    = batch_data["question"]
+            batch_answers      = batch_data["answer"]
+            batch_not_sure     = batch_data["not_sure"]
+            # id format: "Collision_Level_1_0" → type="collision", difficulty="L1"
+            batch_types        = [qid.split("_")[0].lower() for qid in batch_ids]
+            batch_difficulties = ["L" + qid.split("_Level_")[1].split("_")[0] for qid in batch_ids]
 
         # Skip already answered questions
         unanswered_mask = [qid not in answered_ids for qid in batch_ids]
@@ -395,7 +427,13 @@ def main():
     for item in collect_results:
         subset = item["type"]
         level = item["difficulty"]
-        
+
+        for d in (num, res, error):
+            if level not in d:
+                d[level] = {}
+            if subset not in d[level]:
+                d[level][subset] = 0
+
         num[level][subset] += 1
         ans = item["gt_answer"][1] if item["gt_answer"][0] == "(" else item["gt_answer"][0]
 
@@ -404,20 +442,29 @@ def main():
             start_idx = item["model_answer"].find('{')
             end_idx = item["model_answer"].rfind('}')
             output = ast.literal_eval(item["model_answer"][start_idx: end_idx+1])
-            answer = output["Answer"][0]
+            answer = output["Answer"][1] if output["Answer"][0] == "(" else output["Answer"][0]
         except:
             error[level][subset] += 1
 
         if answer is not None and ans == answer:
             res[level][subset] += 1
 
+    total_correct = 0
+    total_num = 0
     for level, level_res in res.items():
         for subset, score in level_res.items():
             if num[level][subset] != 0:
                 print(f"{level} {subset}:\t{score/num[level][subset]:.2%} ({score} / {num[level][subset]})")
             else:
                 print(f"{level} {subset}:\tNaN (0 / 0)")
-    
+            total_correct += score
+            total_num += num[level][subset]
+
+    print("-" * 50)
+    if total_num != 0:
+        print(f"Overall:\t{total_correct/total_num:.2%} ({total_correct} / {total_num})")
+    else:
+        print(f"Overall:\tNaN (0 / 0)")
     print("=" * 50)
 
 if __name__ == "__main__":

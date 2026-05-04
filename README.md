@@ -118,7 +118,7 @@ cp -r ./Wan2.1-I2V-14B-480P/google ./Wan2.1-ATI-14B-480P/
   **vLLM-served models** (any Qwen3-VL size: 4B, 7B, 72B, 235B, ...):
   ```cli
   python eval.py \
-    --model_path Qwen3-VL-7B \
+    --model_path Qwen3-VL-8B-Instruct \
     --node <server_node> \
     --port <server_port> \
     --output_file ./output/qwen3vl.jsonl \
